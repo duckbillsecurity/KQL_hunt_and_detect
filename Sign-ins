@@ -1,0 +1,9 @@
+Jupyter Notebooks
+
+```
+union SigninLogs, AADManagedIdentitySignInLogs, AADServicePrincipalSignInLogs
+| where AppDisplayName has_any ("Azure Machine Learning", "Azure Notebooks") 
+    or UserAgent has_any ("python-requests", "Jupyter", "IPython")
+| project TimeGenerated, UserDisplayName, AppDisplayName, UserAgent, IPAddress, ResultType
+| sort by TimeGenerated desc
+```
