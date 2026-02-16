@@ -1,0 +1,69 @@
+# Lateral Movement Detection: WMIC & WinRM (KQL)
+
+## 1. WMIC Malicious Usage
+WMIC is frequently abused to execute processes remotely, uninstall security software, or gather system reconnaissance.
+
+### Remote Process Creation via WMIC
+Detects when WMIC is used to start a process on a remote system. This is a common lateral movement technique.
+```
+DeviceProcessEvents
+| where ProcessCommandLine has "process" and ProcessCommandLine has "call" and ProcessCommandLine has "create"
+| where ProcessCommandLine has "/node:"
+| project TimeGenerated, DeviceName, AccountName, ProcessCommandLine, ReportingProcessName
+```
+
+### WMIC Reconnaissance & Anti-Forensics
+Detects attempts to stop security services or delete shadows via WMIC.
+```
+DeviceProcessEvents
+| where ProcessCommandLine has "wmic"
+| where ProcessCommandLine has_any ("shadowcopy delete", "antivirusproduct", "executablepath", "nicconfig")
+| project TimeGenerated, DeviceName, AccountName, ProcessCommandLine
+```
+
+### WinRM & Remote PowerShell Abuse
+Suspicious WinRM Process Parentage
+Legitimate WinRM activity usually spawns from wsmprovhost.exe. If you see suspicious processes (like whoami, net user, or certutil) spawning from this process, it indicates remote command execution.
+```
+DeviceProcessEvents
+| where InitiatingProcessFileName =~ "wsmprovhost.exe"
+| where FileName has_any ("cmd.exe", "powershell.exe", "whoami.exe", "net.exe", "certutil.exe", "bitsadmin.exe")
+| project TimeGenerated, DeviceName, AccountName, FileName, ProcessCommandLine
+```
+
+### WinRM Lateral Movement (Network Events)
+Detects a single source machine making WinRM connections (Port 5985 or 5986) to multiple unique destination machines in a short window.
+```
+DeviceNetworkEvents
+| where RemotePort in (5985, 5986)
+| summarize RemoteDestinations = dcount(RemoteIP) by LocalIP, bin(TimeGenerated, 1h)
+| where RemoteDestinations > 3
+| project TimeGenerated, LocalIP, RemoteDestinations
+```
+
+### Combined "Living off the Land" Execution
+This query hunts for the usage of WMIC or WinRM combined with encoded PowerShell commands or credential theft keywords.
+```
+DeviceProcessEvents
+| where (ProcessCommandLine has_any ("wmic", "wsmprovhost", "winrm"))
+| where ProcessCommandLine has_any ("-enc", "-EncodedCommand", "sekurlsa", "lsass", "mini-dump")
+| project TimeGenerated, DeviceName, AccountName, ProcessCommandLine
+```
+
+### Hardening & Visibility (Event ID 4648)
+To detect WinRM usage where explicit credentials are provided (like your DOMAIN\username example), you must monitor for Event ID 4648: A logon was attempted using explicit credentials.
+```
+SecurityEvent
+| where EventID == 4648
+| where ProcessName has_any ("wmic.exe", "powershell.exe")
+| project TimeGenerated, Computer, SubjectAccount, TargetAccount, TargetServer
+```
+
+
+
+
+
+
+
+
+
